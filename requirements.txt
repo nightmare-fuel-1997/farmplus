@@ -1,0 +1,24 @@
+# Web framework
+Django==5.2
+python-dotenv==1.0.1
+
+# Async / WebSockets
+channels==4.2.0
+channels-redis==4.2.0
+daphne==4.1.2
+
+# Database
+psycopg2-binary==2.9.10
+
+# Celery
+celery==5.4.0
+redis==5.2.1
+
+# MQTT client (used by simulator)
+paho-mqtt==2.1.0
+
+# Payload validation
+jsonschema==4.23.0
+
+# Utilities
+python-dateutil==2.9.0
