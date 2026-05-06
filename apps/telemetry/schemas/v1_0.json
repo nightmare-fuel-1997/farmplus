@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FarmPulse Telemetry Payload v1.0",
+  "type": "object",
+  "required": ["schema_version", "org_id", "farm_id", "device_id", "sent_ts", "seq", "is_buffered", "readings"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "org_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{3,64}$"
+    },
+    "farm_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{3,64}$"
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{3,64}$"
+    },
+    "sent_ts": {
+      "type": "integer",
+      "minimum": 1000000000000
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "is_buffered": {
+      "type": "boolean"
+    },
+    "readings": {
+      "type": "object",
+      "required": ["temperature", "humidity"],
+      "additionalProperties": false,
+      "properties": {
+        "temperature": { "type": "number", "minimum": -10.0, "maximum": 60.0 },
+        "humidity":    { "type": "number", "minimum": 0.0,   "maximum": 100.0 },
+        "lux":         { "type": ["number", "null"], "minimum": 0.0, "maximum": 100000.0 },
+        "nh3":         { "type": ["number", "null"], "minimum": 0.0, "maximum": 500.0 }
+      }
+    }
+  }
+}
