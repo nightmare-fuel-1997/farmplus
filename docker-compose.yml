@@ -1,0 +1,68 @@
+# docker-compose.yml
+# Development infrastructure only.
+# Production (Phase 12) will extend this with separate profiles.
+
+services:
+
+  # ─── TimescaleDB ──────────────────────────────────────────────
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: farmpulse_timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB}
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: farmpulse_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes   # AOF persistence — survives restarts
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── EMQX ─────────────────────────────────────────────────────
+  emqx:
+    image: emqx:5.8
+    container_name: farmpulse_emqx
+    restart: unless-stopped
+    ports:
+      - "1883:1883"    # MQTT (plain)
+      - "8083:8083"    # MQTT over WebSocket
+      - "18083:18083"  # EMQX Dashboard (browser UI)
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+    environment:
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USER:-admin}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-farmpulse_admin}
+    healthcheck:
+      test: ["CMD", "emqx", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+# ─── Named Volumes ──────────────────────────────────────────────
+volumes:
+  timescaledb_data:
+  redis_data:
+  emqx_data:
+  emqx_log:
