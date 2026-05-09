@@ -100,7 +100,7 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = "UTC"
 CELERY_BEAT_SCHEDULE = {}  # Empty — Phase 11 will populate this
-
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 # --- Telemetry Pipeline Config ---
 TELEMETRY_REDIS_STREAM_KEY = "telemetry:stream"
 TELEMETRY_REDIS_CONSUMER_GROUP = "pipeline-workers"
