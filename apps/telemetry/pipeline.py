@@ -1,24 +1,20 @@
 # apps/telemetry/pipeline.py
 import json
-import time
 import logging
 from jsonschema import validate, ValidationError
-
+from django.dispatch import Signal
 from .schemas import get_schema
 
 logger = logging.getLogger(__name__)
 
-# Thresholds (in milliseconds)
-CLOCK_DRIFT_WARN_MS   = 5  * 60 * 1000   # 5 minutes
-BUFFERED_CUTOFF_MS    = 15 * 60 * 1000   # 15 minutes
+CLOCK_DRIFT_WARN_MS = 5  * 60 * 1000
+BUFFERED_CUTOFF_MS  = 15 * 60 * 1000
+
+# Phase 10 guard rail — no handler connected yet
+notification_candidate = Signal()
 
 
 def run_pipeline(msg_id: str, fields: dict, redis_client) -> None:
-    """
-    Assembly line. Each step raises an exception on failure.
-    tasks.py catches exceptions and skips XACK — message stays in PEL.
-    """
-    # --- Parse raw stream fields ---
     raw_payload = fields.get('payload', '{}')
     received_ts = int(fields.get('received_ts', 0))
 
@@ -27,74 +23,102 @@ def run_pipeline(msg_id: str, fields: dict, redis_client) -> None:
     except json.JSONDecodeError as e:
         raise ValueError(f"[{msg_id}] Unparseable JSON: {e}")
 
-    # ----------------------------------------------------------------
-    # STEP 1 — JSON Schema Validation
-    # ----------------------------------------------------------------
+    # STEP 1 — Schema Validation
     _validate_schema(msg_id, payload)
-    logger.info(f"[{msg_id}] ✓ Step 1 passed | schema v{payload['schema_version']}")
+    logger.info(f"[{msg_id}] ✓ Step 1 | schema v{payload['schema_version']}")
 
-    # ----------------------------------------------------------------
     # STEP 2 — Device Identity & Auth
-    # ----------------------------------------------------------------
     device = _verify_device(msg_id, payload)
-    logger.info(f"[{msg_id}] ✓ Step 2 passed | device={device.slug}")
+    logger.info(f"[{msg_id}] ✓ Step 2 | device={device.slug}")
 
-    # ----------------------------------------------------------------
     # STEP 3 — Clock Drift Check
-    # ----------------------------------------------------------------
     clock_drift_ms, is_old_buffered = _check_clock_drift(msg_id, payload, received_ts)
-    logger.info(
-        f"[{msg_id}] ✓ Step 3 passed | "
-        f"drift={clock_drift_ms:+,}ms | "
-        f"old_buffered={is_old_buffered}"
+    logger.info(f"[{msg_id}] ✓ Step 3 | drift={clock_drift_ms:+,}ms | old_buffered={is_old_buffered}")
+
+    # STEP 4 — Routing Fork
+    is_buffered_path = _routing_fork(
+        msg_id, payload, device, is_old_buffered, received_ts, redis_client
+    )
+    logger.info(f"[{msg_id}] ✓ Step 4 | path={'BUFFERED' if is_buffered_path else 'LIVE'}")
+
+    # STEP 5 — TimescaleDB Write  (S3-6, next)
+
+
+def _routing_fork(
+    msg_id: str,
+    payload: dict,
+    device,
+    is_old_buffered: bool,
+    received_ts: int,
+    redis_client,
+) -> bool:
+    """
+    Returns True  → buffered path (DB write only)
+    Returns False → live path (Pub/Sub + DB write)
+    """
+    is_buffered = payload.get('is_buffered', False) or is_old_buffered
+
+    if is_buffered:
+        logger.info(
+            f"[{msg_id}] ↷ Buffered path | "
+            f"payload_flag={payload.get('is_buffered')} | "
+            f"old_buffered={is_old_buffered} | "
+            f"skipping Pub/Sub and alerts"
+        )
+        return True
+
+    # ── LIVE PATH ──────────────────────────────────────
+    farm_id        = payload['farm_id']
+    pubsub_channel = f"farm:{farm_id}:live"
+
+    message = json.dumps({
+        "device_id":      payload['device_id'],
+        "farm_id":        farm_id,
+        "org_id":         payload['org_id'],
+        "sent_ts":        payload['sent_ts'],
+        "received_ts":    received_ts,
+        "is_buffered":    False,
+        "readings":       payload['readings'],
+        "schema_version": payload['schema_version'],
+    })
+
+    redis_client.publish(pubsub_channel, message)
+    logger.info(f"[{msg_id}] → Published to Pub/Sub '{pubsub_channel}'")
+
+    # Phase 10 guard rail — signal fired, no handler yet
+    notification_candidate.send(
+        sender=None,
+        payload=payload,
+        device=device,
+        msg_id=msg_id,
     )
 
-    # ----------------------------------------------------------------
-    # STEP 4 — Routing Fork                (S3-5, next)
-    # STEP 5 — TimescaleDB Write           (S3-6)
-    # ----------------------------------------------------------------
+    return False
 
 
 def _check_clock_drift(msg_id: str, payload: dict, received_ts: int) -> tuple[int, bool]:
-    """
-    Compare device sent_ts against server received_ts.
-
-    Returns:
-        clock_drift_ms  — signed integer (positive = message arrived late,
-                          negative = device clock is ahead of server)
-        is_old_buffered — True if sent_ts is older than BUFFERED_CUTOFF_MS
-                          Used by the routing fork (S3-5) to skip live dashboard
-
-    Never raises — clock drift is a warning, not a rejection.
-    """
-    sent_ts = payload['sent_ts']  # ms epoch from device RTC
+    sent_ts        = payload['sent_ts']
     clock_drift_ms = received_ts - sent_ts
 
-    # Warn if device clock is significantly off in either direction
     if abs(clock_drift_ms) > CLOCK_DRIFT_WARN_MS:
         logger.warning(
-            f"[{msg_id}] ⚠ Clock drift detected | "
-            f"sent_ts={sent_ts} | received_ts={received_ts} | "
+            f"[{msg_id}] ⚠ Clock drift | "
             f"drift={clock_drift_ms:+,}ms ({clock_drift_ms/1000/60:.1f} min) | "
             f"device={payload['device_id']}"
         )
 
-    # Data older than 15 minutes is treated as buffered replay
-    # regardless of the is_buffered flag in the payload
-    # (defensive: catches cases where device forgot to set the flag)
     is_old_buffered = clock_drift_ms > BUFFERED_CUTOFF_MS
-
     return clock_drift_ms, is_old_buffered
 
 
 def _validate_schema(msg_id: str, payload: dict) -> None:
     version = payload.get('schema_version')
     if not version:
-        raise ValueError(f"[{msg_id}] Missing 'schema_version' — cannot select validator")
+        raise ValueError(f"[{msg_id}] Missing 'schema_version'")
     try:
         schema = get_schema(version)
     except ValueError:
-        raise ValueError(f"[{msg_id}] Unknown schema_version '{version}' — no schema file found")
+        raise ValueError(f"[{msg_id}] Unknown schema_version '{version}'")
     try:
         validate(instance=payload, schema=schema)
     except ValidationError as e:
@@ -110,11 +134,11 @@ def _verify_device(msg_id: str, payload: dict):
     try:
         device = Device.objects.select_related('farm__organization').get(slug=device_id)
     except Device.DoesNotExist:
-        raise ValueError(f"[{msg_id}] Auth failed — unknown device_id '{device_id}'")
+        raise ValueError(f"[{msg_id}] Auth failed — unknown device '{device_id}'")
     if device.status != Device.Status.ACTIVE:
-        raise ValueError(f"[{msg_id}] Auth failed — device '{device_id}' is '{device.status}' (not active)")
+        raise ValueError(f"[{msg_id}] Auth failed — device '{device_id}' is '{device.status}'")
     if device.farm.slug != farm_id:
-        raise ValueError(f"[{msg_id}] Auth failed — device '{device_id}' belongs to farm '{device.farm.slug}', not claimed '{farm_id}' (possible spoofing)")
+        raise ValueError(f"[{msg_id}] Auth failed — farm mismatch (possible spoofing)")
     if device.farm.organization.slug != org_id:
-        raise ValueError(f"[{msg_id}] Auth failed — device '{device_id}' belongs to org '{device.farm.organization.slug}', not claimed '{org_id}' (possible spoofing)")
+        raise ValueError(f"[{msg_id}] Auth failed — org mismatch (possible spoofing)")
     return device
