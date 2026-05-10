@@ -8,20 +8,20 @@ django.setup()
 from apps.devices.models import Organization, Farm, Device
 
 org, created = Organization.objects.get_or_create(
-    slug="org_sunrise",
+    slug="org-sunrise",
     defaults={"name": "Sunrise Poultry Co."}
 )
 print(f"{'Created' if created else 'Exists'}: Organization → {org.slug}")
 
 farm, created = Farm.objects.get_or_create(
-    slug="farm_01",
+    slug="farm01",
     organization=org,
     defaults={"name": "Farm Alpha"}
 )
 print(f"{'Created' if created else 'Exists'}: Farm → {farm.slug}")
 
 device, created = Device.objects.get_or_create(
-    slug="gw_lora_001",
+    slug="gw-lora-001",
     defaults={"farm": farm, "name": "LoRa Gateway 001", "status": "active"}
 )
 print(f"{'Created' if created else 'Exists'}: Device → {device.slug}")
