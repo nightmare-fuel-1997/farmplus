@@ -1,3 +1,4 @@
+# apps/telemetry/migrations/0001_initial.py
 import django.db.models.deletion
 from django.db import migrations, models
 
@@ -14,7 +15,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="TelemetryReading",
             fields=[
-                ("received_at",    models.DateTimeField()),
+                ("received_at", models.DateTimeField(primary_key=True, serialize=False)),
                 ("sent_ts",        models.BigIntegerField()),
                 ("seq",            models.SmallIntegerField()),
                 ("is_buffered",    models.BooleanField(default=False)),
@@ -42,10 +43,5 @@ class Migration(migrations.Migration):
                     )
                 ],
             },
-        ),
-        # Drop Django's auto-created PK so TimescaleDB can partition by received_at freely
-        migrations.RunSQL(
-            sql="ALTER TABLE telemetry_telemetryreading DROP CONSTRAINT IF EXISTS telemetry_telemetryreading_pkey;",
-            reverse_sql="",
         ),
     ]

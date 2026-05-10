@@ -4,9 +4,16 @@ from apps.devices.models import Device
 
 
 class TelemetryReading(models.Model):
+    """
+    TimescaleDB hypertable partitioned by received_at (1-day chunks).
+    received_at is declared as primary_key=True — this satisfies Django's
+    requirement for a PK while being compatible with TimescaleDB since
+    TimescaleDB allows non-unique time columns as hypertable dimensions.
+    The actual DB-level uniqueness is NOT enforced (TimescaleDB handles partitioning).
+    """
 
+    received_at    = models.DateTimeField(primary_key=True)
     device         = models.ForeignKey(Device, on_delete=models.PROTECT, related_name="readings")
-    received_at    = models.DateTimeField()
     sent_ts        = models.BigIntegerField()
     seq            = models.SmallIntegerField()
     is_buffered    = models.BooleanField(default=False)
@@ -18,10 +25,11 @@ class TelemetryReading(models.Model):
     schema_version = models.CharField(max_length=8, default="1.0")
 
     class Meta:
+        managed = True
         indexes = [
             models.Index(fields=["device", "received_at"]),
         ]
-        ordering  = ["-received_at"]
+        ordering = ["-received_at"]
 
     def __str__(self):
         return f"{self.device} @ {self.received_at}"
