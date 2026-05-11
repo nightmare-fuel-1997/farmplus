@@ -1,8 +1,12 @@
 # apps/telemetry/pipeline.py
 import json
 import logging
+from datetime import datetime, timezone
+
 from jsonschema import validate, ValidationError
 from django.dispatch import Signal
+from django.utils import timezone as dj_timezone
+
 from .schemas import get_schema
 
 logger = logging.getLogger(__name__)
@@ -10,7 +14,6 @@ logger = logging.getLogger(__name__)
 CLOCK_DRIFT_WARN_MS = 5  * 60 * 1000
 BUFFERED_CUTOFF_MS  = 15 * 60 * 1000
 
-# Phase 10 guard rail — no handler connected yet
 notification_candidate = Signal()
 
 
@@ -41,36 +44,55 @@ def run_pipeline(msg_id: str, fields: dict, redis_client) -> None:
     )
     logger.info(f"[{msg_id}] ✓ Step 4 | path={'BUFFERED' if is_buffered_path else 'LIVE'}")
 
-    # STEP 5 — TimescaleDB Write  (S3-6, next)
+    # STEP 5 — TimescaleDB Write (always runs)
+    _write_to_db(msg_id, payload, device, received_ts, clock_drift_ms)
+    logger.info(f"[{msg_id}] ✓ Step 5 | written to TimescaleDB")
 
 
-def _routing_fork(
+def _write_to_db(
     msg_id: str,
     payload: dict,
     device,
-    is_old_buffered: bool,
     received_ts: int,
-    redis_client,
-) -> bool:
+    clock_drift_ms: int,
+) -> None:
     """
-    Returns True  → buffered path (DB write only)
-    Returns False → live path (Pub/Sub + DB write)
-    """
-    is_buffered = payload.get('is_buffered', False) or is_old_buffered
+    Insert one TelemetryReading row into the TimescaleDB hypertable.
+    Always runs — both live and buffered messages are persisted.
 
+    received_ts is Unix milliseconds from the Redis stream entry.
+    We convert it to a timezone-aware datetime for the DateTimeField.
+    """
+    from apps.telemetry.models import TelemetryReading
+
+    readings = payload['readings']
+
+    # Convert ms epoch → timezone-aware datetime
+    received_at = datetime.fromtimestamp(received_ts / 1000.0, tz=timezone.utc)
+
+    TelemetryReading.objects.create(
+        device         = device,
+        received_at    = received_at,
+        sent_ts        = payload['sent_ts'],
+        seq            = payload['seq'],
+        is_buffered    = payload.get('is_buffered', False),
+        clock_drift_ms = clock_drift_ms,
+        temperature    = readings['temperature'],
+        humidity       = readings['humidity'],
+        lux            = readings.get('lux'),       # None if device doesn't have sensor
+        nh3            = readings.get('nh3'),        # None if device doesn't have sensor
+        schema_version = payload['schema_version'],
+    )
+
+
+def _routing_fork(msg_id, payload, device, is_old_buffered, received_ts, redis_client):
+    is_buffered = payload.get('is_buffered', False) or is_old_buffered
     if is_buffered:
-        logger.info(
-            f"[{msg_id}] ↷ Buffered path | "
-            f"payload_flag={payload.get('is_buffered')} | "
-            f"old_buffered={is_old_buffered} | "
-            f"skipping Pub/Sub and alerts"
-        )
+        logger.info(f"[{msg_id}] ↷ Buffered path | skipping Pub/Sub and alerts")
         return True
 
-    # ── LIVE PATH ──────────────────────────────────────
-    farm_id        = payload['farm_id']
+    farm_id = payload['farm_id']
     pubsub_channel = f"farm:{farm_id}:live"
-
     message = json.dumps({
         "device_id":      payload['device_id'],
         "farm_id":        farm_id,
@@ -81,37 +103,26 @@ def _routing_fork(
         "readings":       payload['readings'],
         "schema_version": payload['schema_version'],
     })
-
     redis_client.publish(pubsub_channel, message)
     logger.info(f"[{msg_id}] → Published to Pub/Sub '{pubsub_channel}'")
-
-    # Phase 10 guard rail — signal fired, no handler yet
-    notification_candidate.send(
-        sender=None,
-        payload=payload,
-        device=device,
-        msg_id=msg_id,
-    )
-
+    notification_candidate.send(sender=None, payload=payload, device=device, msg_id=msg_id)
     return False
 
 
-def _check_clock_drift(msg_id: str, payload: dict, received_ts: int) -> tuple[int, bool]:
-    sent_ts        = payload['sent_ts']
+def _check_clock_drift(msg_id, payload, received_ts):
+    sent_ts = payload['sent_ts']
     clock_drift_ms = received_ts - sent_ts
-
     if abs(clock_drift_ms) > CLOCK_DRIFT_WARN_MS:
         logger.warning(
             f"[{msg_id}] ⚠ Clock drift | "
             f"drift={clock_drift_ms:+,}ms ({clock_drift_ms/1000/60:.1f} min) | "
             f"device={payload['device_id']}"
         )
-
     is_old_buffered = clock_drift_ms > BUFFERED_CUTOFF_MS
     return clock_drift_ms, is_old_buffered
 
 
-def _validate_schema(msg_id: str, payload: dict) -> None:
+def _validate_schema(msg_id, payload):
     version = payload.get('schema_version')
     if not version:
         raise ValueError(f"[{msg_id}] Missing 'schema_version'")
@@ -126,7 +137,7 @@ def _validate_schema(msg_id: str, payload: dict) -> None:
         raise ValueError(f"[{msg_id}] Schema validation failed at '{field_path}': {e.message}")
 
 
-def _verify_device(msg_id: str, payload: dict):
+def _verify_device(msg_id, payload):
     from apps.devices.models import Device
     device_id = payload['device_id']
     farm_id   = payload['farm_id']

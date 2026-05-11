@@ -14,7 +14,7 @@ BATCH_SIZE     = 10                  # messages per XREADGROUP call
 BLOCK_MS       = 5000                # block for 5 seconds if stream is empty
 
 
-@shared_task(name='telemetry.consume_stream')
+@shared_task(name='telemetry.consume_stream', ignore_result=True)
 def consume_stream():
     """
     Read a batch of messages from the Redis Stream and process each one
