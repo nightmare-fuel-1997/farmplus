@@ -70,7 +70,7 @@ def _write_to_db(
     # Convert ms epoch → timezone-aware datetime
     received_at = datetime.fromtimestamp(received_ts / 1000.0, tz=timezone.utc)
 
-    TelemetryReading.objects.create(
+    TelemetryReading.objects.get_or_create(
         device         = device,
         received_at    = received_at,
         sent_ts        = payload['sent_ts'],
