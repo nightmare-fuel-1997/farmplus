@@ -1,21 +1,16 @@
+# apps/devices/api.py
 from ninja import Router
 from django.shortcuts import get_object_or_404
-from .models import Organization, Farm, Device
 from typing import List
-from ninja import Schema
 from datetime import datetime
+from ninja import Schema
+from .models import Organization, Farm, Device
+
+devices_router = Router()
+farms_router   = Router()
 
 
-router = Router()
-
-
-# ── Schemas (what the API returns) ──────────────────────────────────────────
-
-class OrganizationOut(Schema):
-    slug: str
-    name: str
-    created_at: datetime
-
+# ── Schemas ──────────────────────────────────────────────────────────────────
 
 class FarmOut(Schema):
     slug: str
@@ -43,14 +38,14 @@ class DeviceOut(Schema):
         return obj.farm.slug
 
 
-# ── Endpoints ────────────────────────────────────────────────────────────────
+# ── Device Endpoints ──────────────────────────────────────────────────────────
 
-@router.get("/", response=List[DeviceOut], summary="List all devices")
+@devices_router.get("/", response=List[DeviceOut], summary="List all devices")
 def list_devices(request):
     return Device.objects.select_related("farm__organization").all()
 
 
-@router.get("/{device_slug}/", response=DeviceOut, summary="Get a single device")
+@devices_router.get("/{device_slug}/", response=DeviceOut, summary="Get a single device")
 def get_device(request, device_slug: str):
     return get_object_or_404(
         Device.objects.select_related("farm__organization"),
@@ -58,12 +53,14 @@ def get_device(request, device_slug: str):
     )
 
 
-@router.get("/farms/", response=List[FarmOut], summary="List all farms")
+# ── Farm Endpoints ────────────────────────────────────────────────────────────
+
+@farms_router.get("/", response=List[FarmOut], summary="List all farms")
 def list_farms(request):
     return Farm.objects.select_related("organization").all()
 
 
-@router.get("/farms/{farm_slug}/", response=FarmOut, summary="Get a single farm")
+@farms_router.get("/{farm_slug}/", response=FarmOut, summary="Get a single farm")
 def get_farm(request, farm_slug: str):
     return get_object_or_404(
         Farm.objects.select_related("organization"),
@@ -71,8 +68,8 @@ def get_farm(request, farm_slug: str):
     )
 
 
-@router.get(
-    "/farms/{farm_slug}/devices/",
+@farms_router.get(
+    "/{farm_slug}/devices/",
     response=List[DeviceOut],
     summary="List all devices on a farm"
 )
