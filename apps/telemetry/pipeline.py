@@ -49,39 +49,32 @@ def run_pipeline(msg_id: str, fields: dict, redis_client) -> None:
     logger.info(f"[{msg_id}] ✓ Step 5 | written to TimescaleDB")
 
 
-def _write_to_db(
-    msg_id: str,
-    payload: dict,
-    device,
-    received_ts: int,
-    clock_drift_ms: int,
-) -> None:
-    """
-    Insert one TelemetryReading row into the TimescaleDB hypertable.
-    Always runs — both live and buffered messages are persisted.
-
-    received_ts is Unix milliseconds from the Redis stream entry.
-    We convert it to a timezone-aware datetime for the DateTimeField.
-    """
+def write_to_db(msg_id, payload, device, received_ts, clock_drift_ms):
     from apps.telemetry.models import TelemetryReading
+    readings = payload["readings"]
 
-    readings = payload['readings']
-
-    # Convert ms epoch → timezone-aware datetime
     received_at = datetime.fromtimestamp(received_ts / 1000.0, tz=timezone.utc)
 
-    TelemetryReading.objects.get_or_create(
-        device         = device,
-        received_at    = received_at,
-        sent_ts        = payload['sent_ts'],
-        seq            = payload['seq'],
-        is_buffered    = payload.get('is_buffered', False),
-        clock_drift_ms = clock_drift_ms,
-        temperature    = readings['temperature'],
-        humidity       = readings['humidity'],
-        lux            = readings.get('lux'),       # None if device doesn't have sensor
-        nh3            = readings.get('nh3'),        # None if device doesn't have sensor
-        schema_version = payload['schema_version'],
+    # Guard: clamp sent_ts to a valid positive range
+    # Protects against malformed buffer files with bad timestamps
+    sent_ts = payload["sent_ts"]
+    MAX_BIGINT = 9_223_372_036_854_775_807
+    if not (0 < sent_ts <= MAX_BIGINT):
+        logger.warning(f"{msg_id} Invalid sent_ts={sent_ts}, substituting received_ts")
+        sent_ts = received_ts
+
+    TelemetryReading.objects.create(
+        device=device,
+        received_at=received_at,
+        sent_ts=sent_ts,
+        seq=payload["seq"],
+        is_buffered=payload.get("is_buffered", False),
+        clock_drift_ms=clock_drift_ms,
+        temperature=readings["temperature"],
+        humidity=readings["humidity"],
+        lux=readings.get("lux"),
+        nh3=readings.get("nh3"),
+        schema_version=payload["schema_version"],
     )
 
 

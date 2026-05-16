@@ -200,21 +200,31 @@ class GatewaySimulator:
             sys.exit(1)
         with open(path) as f:
             entries = json.load(f)
+
         print(f"[{self.device_id}] Replaying {len(entries)} buffered entries from {buffer_file}")
+
+        now_ms = int(time.time() * 1000)
         for entry in entries:
-            payload = self.build_payload(is_buffered=True, override_ts=entry.get("sent_ts"))
+            sent_ts = entry.get("sent_ts")
+
+            # Validate: must be a positive integer in the past, in milliseconds
+            if not sent_ts or sent_ts <= 0 or sent_ts > now_ms:
+                print(f"[{self.device_id}] ⚠ Invalid sent_ts={sent_ts} in buffer, skipping entry")
+                continue
+
+            payload = self.build_payload(is_buffered=True, override_ts=sent_ts)
             if "readings" in entry:
                 payload["readings"] = entry["readings"]
             self.client.publish(self.topic, json.dumps(payload), qos=1)
-            print(f"[{self.device_id}] Replayed ts={payload['sent_ts']}")
+            print(f"[{self.device_id}] Replayed ts={sent_ts}")
             time.sleep(0.2)
+
         print(f"[{self.device_id}] Replay complete")
 
     def disconnect(self):
         if self.client:
             self.client.loop_stop()
             self.client.disconnect()
-
 # ─── Thread Runner ────────────────────────────────────────────────────────────
 
 def run_device(org_id, farm_id, device_id, sensors, interval):

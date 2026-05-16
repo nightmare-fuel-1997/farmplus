@@ -1,20 +1,14 @@
 [
   {
-    "sent_ts": 1715850000000,
-    "readings": {
-      "temperature": 24.3,
-      "humidity": 63.8,
-      "lux": 120.5,
-      "nh3": 14.2
-    }
+    "sent_ts": 1778500000000,
+    "readings": { "temperature": 26.1, "humidity": 61.5 }
   },
   {
-    "sent_ts": 1715850060000,
-    "readings": {
-      "temperature": 24.7,
-      "humidity": 63.1,
-      "lux": 128.1,
-      "nh3": 14.6
-    }
+    "sent_ts": 1778500060000,
+    "readings": { "temperature": 26.4, "humidity": 61.2 }
+  },
+  {
+    "sent_ts": 1778500120000,
+    "readings": { "temperature": 25.9, "humidity": 62.0 }
   }
 ]
