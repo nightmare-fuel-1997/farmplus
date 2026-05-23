@@ -66,8 +66,7 @@ services:
   # ─── Application (all share one built image) ──────────────────────────────
 
   django:
-    build: .
-    image: farmpulse-app:latest
+    image: ${FARMPULSE_IMAGE:-farmpulse-app:latest}
     container_name: farmpulse_django
     restart: always
     command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
@@ -88,7 +87,7 @@ services:
       retries: 3
 
   celery:
-    image: farmpulse-app:latest
+    image: ${FARMPULSE_IMAGE:-farmpulse-app:latest}
     container_name: farmpulse_celery
     restart: always
     command: celery -A config worker --loglevel=info --concurrency=2
@@ -102,7 +101,7 @@ services:
       - farmpulse_net
 
   celerybeat:
-    image: farmpulse-app:latest
+    image: ${FARMPULSE_IMAGE:-farmpulse-app:latest}
     container_name: farmpulse_celerybeat
     restart: always
     command: celery -A config beat --loglevel=info -s /tmp/celerybeat-schedule
@@ -116,7 +115,7 @@ services:
       - farmpulse_net
 
   subscriber:
-    image: farmpulse-app:latest
+    image: ${FARMPULSE_IMAGE:-farmpulse-app:latest}
     container_name: farmpulse_subscriber
     restart: always
     command: python -m apps.telemetry.mqttsubscriber
@@ -130,7 +129,7 @@ services:
       - farmpulse_net
 
   pubsub_relay:
-    image: farmpulse-app:latest
+    image: ${FARMPULSE_IMAGE:-farmpulse-app:latest}
     container_name: farmpulse_pubsub_relay
     restart: always
     command: python -m apps.realtime.pubsub_relay

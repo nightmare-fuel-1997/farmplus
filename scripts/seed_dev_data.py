@@ -131,4 +131,4 @@ for entry in SEED_DATA:
             if created:
                 total_devices += 1
 
-print(f"\n✅ Seed complete — {total_orgs} orgs, {total_farms} farms, {total_devices} devices added.")
+print(f"\n[OK] Seed complete — {total_orgs} orgs, {total_farms} farms, {total_devices} devices added.")

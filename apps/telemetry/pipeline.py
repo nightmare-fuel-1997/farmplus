@@ -28,25 +28,25 @@ def run_pipeline(msg_id: str, fields: dict, redis_client) -> None:
 
     # STEP 1 — Schema Validation
     _validate_schema(msg_id, payload)
-    logger.info(f"[{msg_id}] ✓ Step 1 | schema v{payload['schema_version']}")
+    logger.info(f"[{msg_id}] OK Step 1 | schema v{payload['schema_version']}")
 
     # STEP 2 — Device Identity & Auth
     device = _verify_device(msg_id, payload)
-    logger.info(f"[{msg_id}] ✓ Step 2 | device={device.slug}")
+    logger.info(f"[{msg_id}] OK Step 2 | device={device.slug}")
 
     # STEP 3 — Clock Drift Check
     clock_drift_ms, is_old_buffered = _check_clock_drift(msg_id, payload, received_ts)
-    logger.info(f"[{msg_id}] ✓ Step 3 | drift={clock_drift_ms:+,}ms | old_buffered={is_old_buffered}")
+    logger.info(f"[{msg_id}] OK Step 3 | drift={clock_drift_ms:+,}ms | old_buffered={is_old_buffered}")
 
     # STEP 4 — Routing Fork
     is_buffered_path = _routing_fork(
         msg_id, payload, device, is_old_buffered, received_ts, redis_client
     )
-    logger.info(f"[{msg_id}] ✓ Step 4 | path={'BUFFERED' if is_buffered_path else 'LIVE'}")
+    logger.info(f"[{msg_id}] OK Step 4 | path={'BUFFERED' if is_buffered_path else 'LIVE'}")
 
     # STEP 5 — TimescaleDB Write (always runs)
-    _write_to_db(msg_id, payload, device, received_ts, clock_drift_ms)
-    logger.info(f"[{msg_id}] ✓ Step 5 | written to TimescaleDB")
+    write_to_db(msg_id, payload, device, received_ts, clock_drift_ms)
+    logger.info(f"[{msg_id}] OK Step 5 | written to TimescaleDB")
 
 
 def write_to_db(msg_id, payload, device, received_ts, clock_drift_ms):
@@ -81,7 +81,7 @@ def write_to_db(msg_id, payload, device, received_ts, clock_drift_ms):
 def _routing_fork(msg_id, payload, device, is_old_buffered, received_ts, redis_client):
     is_buffered = payload.get('is_buffered', False) or is_old_buffered
     if is_buffered:
-        logger.info(f"[{msg_id}] ↷ Buffered path | skipping Pub/Sub and alerts")
+        logger.info(f"[{msg_id}] -> Buffered path | skipping Pub/Sub and alerts")
         return True
 
     farm_id = payload['farm_id']
@@ -97,7 +97,7 @@ def _routing_fork(msg_id, payload, device, is_old_buffered, received_ts, redis_c
         "schema_version": payload['schema_version'],
     })
     redis_client.publish(pubsub_channel, message)
-    logger.info(f"[{msg_id}] → Published to Pub/Sub '{pubsub_channel}'")
+    logger.info(f"[{msg_id}] -> Published to Pub/Sub '{pubsub_channel}'")
     notification_candidate.send(sender=None, payload=payload, device=device, msg_id=msg_id)
     return False
 
@@ -107,7 +107,7 @@ def _check_clock_drift(msg_id, payload, received_ts):
     clock_drift_ms = received_ts - sent_ts
     if abs(clock_drift_ms) > CLOCK_DRIFT_WARN_MS:
         logger.warning(
-            f"[{msg_id}] ⚠ Clock drift | "
+            f"[{msg_id}] [WARN] Clock drift | "
             f"drift={clock_drift_ms:+,}ms ({clock_drift_ms/1000/60:.1f} min) | "
             f"device={payload['device_id']}"
         )

@@ -37,7 +37,8 @@ MQTT_HOST     = os.environ.get("EMQX_HOST", "localhost")
 MQTT_PORT     = int(os.environ.get("EMQX_PORT", 1884))       # our remapped port
 MQTT_USERNAME = os.environ.get("EMQX_USERNAME", "")
 MQTT_PASSWORD = os.environ.get("EMQX_PASSWORD", "")
-MQTT_CLIENT_ID = "farmpulse-subscriber-01"
+import uuid
+MQTT_CLIENT_ID = f"farmpulse-subscriber-{uuid.uuid4().hex[:8]}"
 MQTT_TOPIC    = "+/farms/+/gateways/+/telemetry"
 MQTT_QOS      = 1                                              # at-least-once delivery
 

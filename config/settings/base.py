@@ -83,12 +83,18 @@ DATABASES = {
 #                       Channels layer, Pub/Sub) ---
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
+# Parse Redis URL dynamically to configure Django Channels Layer host and port
+from urllib.parse import urlparse
+_redis_parsed = urlparse(REDIS_URL)
+_redis_host = _redis_parsed.hostname or "localhost"
+_redis_port = _redis_parsed.port or 6379
+
 # --- Django Channels Layer ---
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("redis", 6379)],
+            "hosts": [(_redis_host, _redis_port)],
             "capacity": 500,        # default is 100 — raise it
             "expiry": 10,           # seconds before unread messages expire
         },

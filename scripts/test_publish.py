@@ -1,12 +1,20 @@
 # scripts/test_publish.py
-import json, time
+import json, time, os
 import paho.mqtt.client as mqtt
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MQTT_HOST = os.environ.get("EMQX_HOST", "localhost")
+MQTT_PORT = int(os.environ.get("EMQX_PORT", 1884))
+MQTT_USERNAME = os.environ.get("EMQX_USERNAME", "")
+MQTT_PASSWORD = os.environ.get("EMQX_PASSWORD", "")
 
 PAYLOAD = {
     "schema_version": "1.0",
-    "org_id":    "org_sunrise",
-    "farm_id":   "farm_01",
-    "device_id": "gw_lora_001",
+    "org_id":    "org-sunrise",
+    "farm_id":   "farm-01",
+    "device_id": "gw-lora-001",
     "sent_ts":   int(time.time() * 1000),
     "seq":       1,
     "is_buffered": False,
@@ -23,11 +31,16 @@ client = mqtt.Client(
     protocol=mqtt.MQTTv5,
     callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
 )
-client.connect("localhost", 1884)
+
+if MQTT_USERNAME:
+    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
+print(f"Connecting to EMQX at {MQTT_HOST}:{MQTT_PORT}...")
+client.connect(MQTT_HOST, MQTT_PORT)
 client.publish(
-    topic="org_sunrise/farms/farm_01/gateways/gw_lora_001/telemetry",
+    topic="org-sunrise/farms/farm-01/gateways/gw-lora-001/telemetry",
     payload=json.dumps(PAYLOAD),
     qos=1,
 )
 client.disconnect()
-print("✅ Published test message to EMQX")
+print("[OK] Published test message to EMQX")
