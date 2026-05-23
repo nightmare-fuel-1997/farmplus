@@ -52,6 +52,7 @@ services:
       - emqx_data:/opt/emqx/data
       - emqx_log:/opt/emqx/log
     environment:
+      EMQX_ALLOW_ANONYMOUS: "true"
       EMQX_NODE__NAME: "emqx@127.0.0.1"
       EMQX_NODE__COOKIE: ${EMQX_NODE_COOKIE}
       EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USER}
@@ -124,6 +125,8 @@ services:
     env_file: .env.prod
     depends_on:
       redis:
+        condition: service_healthy
+      django:
         condition: service_healthy
     networks:
       - farmpulse_net
