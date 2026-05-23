@@ -23,7 +23,6 @@ services:
       retries: 5
     networks:
       - farmpulse_net
-    # No external port — internal network only
 
   redis:
     image: redis:7.2-alpine
@@ -52,7 +51,6 @@ services:
       - emqx_data:/opt/emqx/data
       - emqx_log:/opt/emqx/log
     environment:
-      EMQX_ALLOW_ANONYMOUS: "true"
       EMQX_NODE__NAME: "emqx@127.0.0.1"
       EMQX_NODE__COOKIE: ${EMQX_NODE_COOKIE}
       EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USER}
@@ -65,7 +63,7 @@ services:
       timeout: 10s
       retries: 5
 
-  # ─── Application (all three share one built image) ────────────────────────
+  # ─── Application (all share one built image) ──────────────────────────────
 
   django:
     build: .
@@ -103,6 +101,20 @@ services:
     networks:
       - farmpulse_net
 
+  celerybeat:
+    image: farmpulse-app:latest
+    container_name: farmpulse_celerybeat
+    restart: always
+    command: celery -A config beat --loglevel=info -s /tmp/celerybeat-schedule
+    env_file: .env.prod
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - farmpulse_net
+
   subscriber:
     image: farmpulse-app:latest
     container_name: farmpulse_subscriber
@@ -117,9 +129,9 @@ services:
     networks:
       - farmpulse_net
 
-  relay:
+  pubsub_relay:
     image: farmpulse-app:latest
-    container_name: farmpulse_relay
+    container_name: farmpulse_pubsub_relay
     restart: always
     command: python -m apps.realtime.pubsub_relay
     env_file: .env.prod
@@ -131,7 +143,7 @@ services:
     networks:
       - farmpulse_net
 
-# ─── Volumes & Networks ────────────────────────────────────────────────────────
+# ─── Volumes & Networks ───────────────────────────────────────────────────────
 
 volumes:
   timescaledb_data:

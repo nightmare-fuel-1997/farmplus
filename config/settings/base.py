@@ -88,9 +88,11 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [REDIS_URL],
+            "hosts": [("redis", 6379)],
+            "capacity": 500,        # default is 100 — raise it
+            "expiry": 10,           # seconds before unread messages expire
         },
-    },
+    }
 }
 
 # --- Celery ---
