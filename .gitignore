@@ -1,6 +1,6 @@
 # Secrets — NEVER commit
 .env
-
+.env.prod
 # Python
 __pycache__/
 *.py[cod]
