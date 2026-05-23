@@ -1,0 +1,129 @@
+# docker-compose.prod.yml
+# Production deployment — run with:
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+
+  # ─── Infrastructure ────────────────────────────────────────────────────────
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: farmpulse_timescaledb
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - farmpulse_net
+    # No external port — internal network only
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: farmpulse_redis
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - farmpulse_net
+
+  emqx:
+    image: emqx:5.8
+    container_name: farmpulse_emqx
+    restart: always
+    ports:
+      - "1883:1883"    # MQTT — devices connect here
+      - "8083:8083"    # MQTT over WebSocket
+      # 18083 dashboard NOT exposed in prod — access via SSH tunnel only
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+    environment:
+      EMQX_NODE__NAME: "emqx@127.0.0.1"
+      EMQX_NODE__COOKIE: ${EMQX_NODE_COOKIE}
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USER}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD}
+    networks:
+      - farmpulse_net
+    healthcheck:
+      test: ["CMD", "emqx", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ─── Application (all three share one built image) ────────────────────────
+
+  django:
+    build: .
+    image: farmpulse-app:latest
+    container_name: farmpulse_django
+    restart: always
+    command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
+    ports:
+      - "8001:8000"
+    env_file: .env.prod
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - farmpulse_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  celery:
+    image: farmpulse-app:latest
+    container_name: farmpulse_celery
+    restart: always
+    command: celery -A config worker --loglevel=info --concurrency=2
+    env_file: .env.prod
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - farmpulse_net
+
+  subscriber:
+    image: farmpulse-app:latest
+    container_name: farmpulse_subscriber
+    restart: always
+    command: python -m apps.telemetry.mqttsubscriber
+    env_file: .env.prod
+    depends_on:
+      emqx:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - farmpulse_net
+
+# ─── Volumes & Networks ────────────────────────────────────────────────────────
+
+volumes:
+  timescaledb_data:
+  redis_data:
+  emqx_data:
+  emqx_log:
+
+networks:
+  farmpulse_net:
+    driver: bridge

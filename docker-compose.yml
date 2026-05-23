@@ -1,6 +1,5 @@
 # docker-compose.yml
 # Development infrastructure only.
-# Production (Phase 12) will extend this with separate profiles.
 
 services:
 
