@@ -72,7 +72,7 @@ services:
     command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
     ports:
       - "8001:8000"
-    env_file: .env.prod
+    env_file: .env
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -91,7 +91,7 @@ services:
     container_name: farmpulse_celery
     restart: always
     command: celery -A config worker --loglevel=info --concurrency=2
-    env_file: .env.prod
+    env_file: .env
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -105,7 +105,7 @@ services:
     container_name: farmpulse_celerybeat
     restart: always
     command: celery -A config beat --loglevel=info -s /tmp/celerybeat-schedule
-    env_file: .env.prod
+    env_file: .env
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -119,7 +119,7 @@ services:
     container_name: farmpulse_subscriber
     restart: always
     command: python -m apps.telemetry.mqttsubscriber
-    env_file: .env.prod
+    env_file: .env
     depends_on:
       emqx:
         condition: service_healthy
@@ -133,7 +133,7 @@ services:
     container_name: farmpulse_pubsub_relay
     restart: always
     command: python -m apps.realtime.pubsub_relay
-    env_file: .env.prod
+    env_file: .env
     depends_on:
       redis:
         condition: service_healthy
